@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Mein Tag"/>
+  <meta name="theme-color" content="#1a1a2e"/>
+  <title>Mein Tag – Rita</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body { background: #f5f5f7; font-family: 'Segoe UI', sans-serif; overscroll-behavior: none; }
+    input[type=time], input[type=number] { -webkit-appearance: none; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const DAY_TYPES = {
+  buero:      { label: "🏢 Bürotag",    aufstehen: "05:10" },
+  mobil:      { label: "💻 Mobiltag",   aufstehen: "05:40" },
+  wochenende: { label: "🛋️ Wochenende", aufstehen: "08:30" },
+};
+
+function addMinutes(time, mins) {
+  const [h, m] = time.split(":").map(Number);
+  const total = h * 60 + m + mins;
+  return `${String(Math.floor(total/60)%24).padStart(2,"0")}:${String(total%60).padStart(2,"0")}`;
+}
+
+function buildSchedule(dayType) {
+  const auf = DAY_TYPES[dayType].aufstehen;
+  const frueh = addMinutes(auf, 50);
+  const calcium1 = dayType === "wochenende" ? addMinutes(auf, 270) : "10:00";
+  const mittag   = dayType === "wochenende" ? addMinutes(auf, 270) : "12:15";
+  const calcium2 = dayType === "wochenende" ? addMinutes(auf, 480) : "16:00";
+  return { auf, frueh, calcium1, mittag, calcium2 };
+}
+
+function getMealSchedule(dayType) {
+  if (dayType === "buero") return [
+    { id:"m1", label:"Frühstück",            icon:"🍳", time:"06:00", snack:false },
+    { id:"s1", label:"Snack (nur bei Hunger)",icon:"🥕", time:"09:30", snack:true  },
+    { id:"m2", label:"Mittagessen",           icon:"🥗", time:"12:15", snack:false },
+    { id:"m3", label:"Zwischenmahlzeit",      icon:"🍎", time:"15:30", snack:false },
+    { id:"m4", label:"Abendessen",            icon:"🍽️", time:"19:00", snack:false },
+  ];
+  if (dayType === "mobil") return [
+    { id:"m1", label:"Frühstück",            icon:"🍳", time:"06:30", snack:false },
+    { id:"s1", label:"Snack (nur bei Hunger)",icon:"🥕", time:"09:45", snack:true  },
+    { id:"m2", label:"Mittagessen",           icon:"🥗", time:"12:15", snack:false },
+    { id:"m3", label:"Zwischenmahlzeit",      icon:"🍎", time:"15:30", snack:false },
+    { id:"m4", label:"Abendessen",            icon:"🍽️", time:"19:00", snack:false },
+  ];
+  return [
+    { id:"m1", label:"Frühstück",            icon:"🍳", time:"09:15", snack:false },
+    { id:"m2", label:"Mittagessen",           icon:"🥗", time:"12:30", snack:false },
+    { id:"m3", label:"Zwischenmahlzeit",      icon:"🍎", time:"16:00", snack:false },
+    { id:"m4", label:"Abendessen",            icon:"🍽️", time:"19:30", snack:false },
+  ];
+}
+
+const B12_NEXT = new Date("2026-06-27");
+function getB12Status() {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const next = new Date(B12_NEXT); next.setHours(0,0,0,0);
+  const diffDays = Math.round((next - today) / 86400000);
+  if (diffDays < 0) return { label:"Überfällig!", color:"#e74c3c" };
+  if (diffDays === 0) return { label:"Heute!", color:"#e74c3c" };
+  if (diffDays <= 3) return { label:`In ${diffDays} Tag${diffDays===1?"":"en"}`, color:"#e67e22" };
+  return { label:`In ${diffDays} Tagen`, color:"#27ae60" };
+}
+
+function isSaturday() { return new Date().getDay() === 6; }
+
+function getSupplements(dayType) {
+  const s = buildSchedule(dayType);
+  const showDekristol = dayType === "wochenende" && isSaturday();
+  const list = [
+    { id:"lthyroxin",    name:"L-Thyroxin Henning",     time:s.auf,      color:"#e74c3c", category:"Medikament", note:"Nüchtern, 30–60 Min vor Essen. 4h Abstand zu Magnesium, Calcium, Eisen, Kaffee." },
+    { id:"omega3",       name:"Omega-3 Fish Oil",        time:s.frueh,    color:"#2980b9", category:"NEM",        note:"Zum Frühstück mit Fett einnehmen." },
+    { id:"betacarotin",  name:"Betacaroten",             time:s.frueh,    color:"#e67e22", category:"NEM",        note:"1 Kapsel zum Frühstück MIT Fett (fettlöslich!). Max. 3,5 mg/Tag. Kein UV-Schutz – Sonnencreme trotzdem verwenden." },
+    showDekristol ? { id:"dekristol", name:"Dekristol 20.000 I.E.", time:s.frueh, color:"#f39c12", category:"Medikament", note:"Nur samstags! Zum Frühstück mit Fett.", samstag:true } : null,
+    { id:"calcium1",     name:"WLS Calcium (1. Dosis)",  time:s.calcium1, color:"#3498db", category:"NEM",        note:"Mind. 4h nach L-Thyroxin. Getrennt von Zink." },
+    { id:"kollagen",     name:"Kollagen Komplex",        time:s.mittag,   color:"#8e44ad", category:"NEM",        note:"Enthält Biotin, Selen & Zink – separates Biotin+Zink+Selen ggf. weglassen." },
+    { id:"priorin",      name:"Priorin Kapseln",         time:s.mittag,   color:"#e67e22", category:"NEM",        note:"Überschneidung mit Kollagen-Komplex prüfen." },
+    { id:"biotinzinksel",name:"Biotin + Zink + Selen",  time:s.mittag,   color:"#7f8c8d", category:"NEM",        note:"⚠️ Überschneidung mit Kollagen-Komplex! Vor Blutabnahme 48–72h pausieren." },
+    { id:"calcium2",     name:"WLS Calcium (2. Dosis)",  time:s.calcium2, color:"#2980b9", category:"NEM",        note:"2. Dosis. Getrennt von Zink, mind. 2h vor Magnesium." },
+    { id:"lafamme",      name:"Lafamme",                 time:"20:00",    color:"#e91e8c", category:"Medikament", note:"Täglich abends." },
+    { id:"ashwagandha",  name:"Ashwagandha KSM-66",     time:"20:00",    color:"#27ae60", category:"NEM",        note:"Abends – kann müde machen." },
+    { id:"magnesium",    name:"Magnesiumoxid 400 mg",    time:"20:00",    color:"#16a085", category:"NEM",        note:"Abends. Tipp: Magnesiumcitrat/-bisglycinat nach Bypass besser verträglich." },
+    { id:"oestro",       name:"Oestro-Gynaedron",        time:"22:00",    color:"#e91e63", category:"Medikament", note:"Vaginalcreme, alle 2 Tage. Estriol 1,0 mg/g.", alle2tage:true },
+    { id:"quviviq",      name:"Quviviq",                 time:"22:30",    color:"#2c3e50", category:"Medikament", note:"Kurz vor dem Schlafen. Kein Alkohol." },
+    { id:"movicol",      name:"Movicol",                 time:"08:00",    color:"#16a085", category:"Medikament", note:"1x täglich. Mit ausreichend Wasser einnehmen." },
+    { id:"wlsforte",      name:"WLS Forte",                time:"12:00",    color:"#8e44ad", category:"Medikament", note:"1x täglich. Speziell für Bypass-Patienten formuliert." },
+    { id:"pantoprazol",  name:"Pantoprazol",             time:null,       color:"#c0392b", category:"Medikament", note:"Nur bei Bedarf. 30 Min vor dem Essen.", bedarf:true },
+  ];
+  return list.filter(Boolean);
+}
+
+const TIME_BLOCKS = [
+  { label:"🌅 Morgens nüchtern",  ids:["lthyroxin"] },
+  { label:"🍳 Zum Frühstück",     ids:["omega3","betacarotin","dekristol","movicol"] },
+  { label:"☀️ Vormittag",         ids:["calcium1"] },
+  { label:"🥗 Mittags",           ids:["kollagen","priorin","biotinzinksel","wlsforte"] },
+  { label:"🕓 Nachmittag",        ids:["calcium2"] },
+  { label:"🌙 Abends",            ids:["lafamme","ashwagandha","magnesium"] },
+  { label:"🛏️ Vor dem Schlafen",  ids:["oestro","quviviq"] },
+  { label:"💊 Nur bei Bedarf",    ids:["pantoprazol"] },
+];
+
+const WORKOUT_WEEK = [
+  { day:"Montag",    type:"kraft",    icon:"🏋️", title:"Kettlebell + Rumpf",      duration:"20–25 Min",
+    exercises:[{name:"Kettlebell Swing",sets:"3×15",note:"Rücken, Gesäß, Rumpf"},{name:"Kreuzheben KB",sets:"3×10",note:"Rücken gerade"},{name:"Plank",sets:"3×30 Sek",note:"Bauch anspannen"},{name:"Vibrationsplatte Kniebeuge",sets:"2×45 Sek",note:"Position halten"}]},
+  { day:"Dienstag",  type:"ausdauer", icon:"🏃", title:"Joggen + Walking Pad",     duration:"30–40 Min",
+    exercises:[{name:"Lockeres Joggen",sets:"20–25 Min",note:"Ruhiges Tempo"},{name:"Walking Pad Cooldown",sets:"10–15 Min",note:"Auskühlen"}]},
+  { day:"Mittwoch",  type:"pause",    icon:"🚶", title:"Aktive Erholung",          duration:"mind. 9 km",
+    exercises:[{name:"Spaziergang",sets:"9+ km",note:"Entspanntes Tempo"}]},
+  { day:"Donnerstag",type:"kraft",    icon:"🏋️", title:"Kurzhanteln Oberkörper",   duration:"20–25 Min",
+    exercises:[{name:"Schulterpress",sets:"3×12",note:"Schultern & Rumpf"},{name:"Einarmiges Rudern",sets:"3×12/Seite",note:"Rücken parallel"},{name:"Bizeps-Curl",sets:"2×15",note:"Kontrolliert"},{name:"Seitliches Anheben",sets:"2×15",note:"Leichtes Gewicht"},{name:"Vibrationsplatte Liegestütz",sets:"2×30 Sek",note:"Hände auf Platte"}]},
+  { day:"Freitag",   type:"ausdauer", icon:"🏃", title:"Intervall-Joggen",         duration:"30–40 Min",
+    exercises:[{name:"Intervall-Joggen",sets:"3×5 Min",note:"1 Min zügig, 1 Min Gehen"},{name:"Walking Cooldown",sets:"10 Min",note:"Dehnen"}]},
+  { day:"Samstag",   type:"kraft",    icon:"🏋️", title:"Kettlebell + Kurzhanteln", duration:"25–30 Min",
+    exercises:[{name:"KB Swing einarmig",sets:"3×10/Seite",note:"Rotationsstabilität"},{name:"Kniebeuge KB",sets:"3×12",note:"Knie über Zehen"},{name:"KH Schulterpress",sets:"3×12",note:"Sitzend oder stehend"},{name:"Vibrationsplatte Plank",sets:"2×30 Sek",note:"Intensivierung"}]},
+  { day:"Sonntag",   type:"pause",    icon:"🛋️", title:"Ruhetag",                  duration:"Entspannung",
+    exercises:[{name:"Spaziergang",sets:"nach Lust",note:"Kein Pflichtprogramm"},{name:"Dehnen",sets:"10 Min optional",note:"Hüfte, Rücken, Schultern"}]},
+];
+
+function getNow() { const d=new Date(); return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; }
+function timeToMin(t) { if(!t) return 9999; const [h,m]=t.split(":").map(Number); return h*60+m; }
+function fmtCD(s) { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60; return h>0?`${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`:`${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`; }
+
+function PBar({value,max,color}) {
+  const pct=Math.min(100,Math.round((value/max)*100));
+  return <div style={{background:"#f0f0f0",borderRadius:6,height:8,width:"100%"}}><div style={{width:`${pct}%`,background:color,borderRadius:6,height:8,transition:"width 0.4s"}}/></div>;
+}
+function Bdg({text,color}) {
+  return <span style={{fontSize:10,background:color+"22",color,border:`1px solid ${color}55`,borderRadius:4,padding:"1px 6px",fontWeight:700,whiteSpace:"nowrap"}}>{text}</span>;
+}
+
+function App() {
+  const todayStr=new Date().toDateString();
+  const dow=new Date().getDay();
+  const defDT=(dow===0||dow===6)?"wochenende":"buero";
+  const todayW=WORKOUT_WEEK[dow===0?6:dow-1];
+  const tc={kraft:"#e74c3c",ausdauer:"#3498db",pause:"#27ae60"};
+
+  const [tab,setTab]=useState("supplements");
+  const [now,setNow]=useState(getNow());
+  const [dayType,setDayType]=useState(()=>localStorage.getItem("dayType_"+todayStr)||defDT);
+  const [suppDone,setSuppDone]=useState(()=>{try{return JSON.parse(localStorage.getItem("suppDone")||"{}");}catch{return{};}});
+  const [mealDone,setMealDone]=useState(()=>{try{return JSON.parse(localStorage.getItem("mealDone")||"{}");}catch{return{};}});
+  const [nutrition,setNutrition]=useState(()=>{try{return JSON.parse(localStorage.getItem("nutrition")||"null")||{kcal:0,protein:0,fat:0,carbs:0};}catch{return{kcal:0,protein:0,fat:0,carbs:0};}});
+  const [nutInput,setNutInput]=useState({kcal:"",protein:"",fat:"",carbs:""});
+  const [lastReset,setLastReset]=useState(()=>localStorage.getItem("lastReset")||"");
+  const [xSupp,setXSupp]=useState(null);
+  const [xWork,setXWork]=useState(null);
+  const [oestroDay,setOestroDay]=useState(()=>localStorage.getItem("oestroDay")||"");
+  const [workDone,setWorkDone]=useState(()=>{try{return JSON.parse(localStorage.getItem("workoutDone")||"{}");}catch{return{};}});
+  const [steps,setSteps]=useState(()=>{try{return parseInt(localStorage.getItem("steps")||"0");}catch{return 0;}});
+  const [bodyToday,setBodyToday]=useState(()=>{try{return JSON.parse(localStorage.getItem("bodyToday")||"null")||{gewicht:"",koerperfett:"",bmi:"",schritte_sh:"",kcal_bewegung:""};}catch{return{gewicht:"",koerperfett:"",bmi:"",schritte_sh:"",kcal_bewegung:""};}}); 
+  const [bodyHistory,setBodyHistory]=useState(()=>{try{return JSON.parse(localStorage.getItem("bodyHistory")||"[]");}catch{return[];}});
+  const [bodyInput,setBodyInput]=useState({gewicht:"",koerperfett:"",bmi:"",schritte_sh:"",kcal_bewegung:""});
+  const [drinkT,setDrinkT]=useState(null);
+  const [drinkL,setDrinkL]=useState("");
+  const dRef=useRef(null);
+  const [mealTimes,setMealTimes]=useState(()=>{
+    const st=localStorage.getItem("mealTimes_"+todayStr);
+    if(st)try{return JSON.parse(st);}catch{}
+    return getMealSchedule(defDT).reduce((a,m)=>({...a,[m.id]:m.time}),{});
+  });
+
+  const SUPPS=getSupplements(dayType);
+  const MEALS=getMealSchedule(dayType);
+  const b12=getB12Status();
+
+  useEffect(()=>{
+    if(lastReset!==todayStr){
+      setSuppDone({});setMealDone({});setNutrition({kcal:0,protein:0,fat:0,carbs:0});setLastReset(todayStr);setSteps(0);
+      localStorage.setItem("lastReset",todayStr);
+      ["suppDone","mealDone","nutrition","steps"].forEach(k=>localStorage.removeItem(k));
+    }
+  },[]);
+  useEffect(()=>{setOestroDay(todayStr);},[]);
+  const chDT=(dt)=>{setDayType(dt);const nt=getMealSchedule(dt).reduce((a,m)=>({...a,[m.id]:m.time}),{});setMealTimes(nt);localStorage.setItem("dayType_"+todayStr,dt);localStorage.setItem("mealTimes_"+todayStr,JSON.stringify(nt));};
+  useEffect(()=>{const t=setInterval(()=>setNow(getNow()),1000);return()=>clearInterval(t);},[]);
+  useEffect(()=>{localStorage.setItem("suppDone",JSON.stringify(suppDone));},[suppDone]);
+  useEffect(()=>{localStorage.setItem("mealDone",JSON.stringify(mealDone));},[mealDone]);
+  useEffect(()=>{localStorage.setItem("mealTimes_"+todayStr,JSON.stringify(mealTimes));},[mealTimes]);
+  useEffect(()=>{localStorage.setItem("nutrition",JSON.stringify(nutrition));},[nutrition]);
+  useEffect(()=>{localStorage.setItem("oestroDay",oestroDay);},[oestroDay]);
+  useEffect(()=>{localStorage.setItem("workoutDone",JSON.stringify(workDone));},[workDone]);
+  useEffect(()=>{localStorage.setItem("steps",String(steps));},[steps]);
+  useEffect(()=>{localStorage.setItem("bodyToday",JSON.stringify(bodyToday));},[bodyToday]);
+  useEffect(()=>{localStorage.setItem("bodyHistory",JSON.stringify(bodyHistory));},[bodyHistory]);
+  useEffect(()=>{
+    if(drinkT===null)return;
+    if(drinkT<=0){setDrinkT(null);setDrinkL("");return;}
+    dRef.current=setTimeout(()=>setDrinkT(t=>t-1),1000);
+    return()=>clearTimeout(dRef.current);
+  },[drinkT]);
+
+  const startDrink=(type)=>{setDrinkT(30*60);setDrinkL(type==="before"?"⏳ Trinkpause vor Essen":"⏳ Trinkpause nach Essen");};
+  const isOestro=oestroDay===todayStr;
+  const actSupps=SUPPS.filter(s=>!s.bedarf&&(!s.alle2tage||isOestro));
+  const sDone=actSupps.filter(s=>suppDone[s.id]).length;
+  const mDone=MEALS.filter(m=>mealDone[m.id]).length;
+  const nowMin=timeToMin(now);
+  const nxtMeal=MEALS.filter(m=>!mealDone[m.id]&&timeToMin(mealTimes[m.id]||m.time)>nowMin).sort((a,b)=>timeToMin(mealTimes[a.id]||a.time)-timeToMin(mealTimes[b.id]||b.time))[0];
+  const nxtMealMin=nxtMeal?timeToMin(mealTimes[nxtMeal.id]||nxtMeal.time):null;
+  const nxtMealSec=nxtMealMin?Math.max(0,(nxtMealMin-nowMin)*60):null;
+  const lstDrinkSec=nxtMealMin?Math.max(0,(nxtMealMin-30-nowMin)*60):null;
+  const nxtSupp=actSupps.filter(s=>s.time&&!suppDone[s.id]).sort((a,b)=>timeToMin(a.time)-timeToMin(b.time))[0];
+  const gapOk=MEALS.every((m,i)=>{if(i===0||m.snack)return true;const p=MEALS.slice(0,i).filter(x=>!x.snack).pop();return!p||timeToMin(mealTimes[m.id]||m.time)-timeToMin(mealTimes[p.id]||p.time)>=180;});
+
+  const card={background:"#fff",borderRadius:14,padding:"14px 16px",marginBottom:10,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"};
+  const tbtn=(a)=>({flex:1,padding:"7px 0",border:"none",background:a?"#1a1a2e":"transparent",color:a?"#fff":"#888",fontWeight:a?700:400,fontSize:10,cursor:"pointer",borderRadius:8});
+
+  const SC=({s})=>{
+    const done=!!suppDone[s.id],past=s.time&&timeToMin(s.time)<nowMin,isNx=nxtSupp?.id===s.id,exp=xSupp===s.id,warn=s.note.includes("⚠️");
+    return(
+      <div style={{...card,border:isNx?`2px solid ${s.color}`:warn?"2px solid #e67e2244":"2px solid transparent",opacity:done?0.55:1}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div onClick={()=>{if(s.alle2tage&&!done)setOestroDay(todayStr);setSuppDone(p=>({...p,[s.id]:!p[s.id]}));}}
+            style={{width:32,height:32,borderRadius:"50%",background:done?"#27ae6022":s.color+"18",border:`2px solid ${done?"#27ae60":s.color}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:14,color:done?"#27ae60":s.color,fontWeight:700}}>
+            {done?"✓":""}
+          </div>
+          <div style={{flex:1,minWidth:0}} onClick={()=>setXSupp(exp?null:s.id)}>
+            <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+              <span style={{fontWeight:600,fontSize:13,color:done?"#aaa":"#1a1a2e",textDecoration:done?"line-through":"none"}}>{s.name}</span>
+              <Bdg text={s.category} color={s.category==="Medikament"?"#e74c3c":"#3498db"}/>
+              {s.bedarf&&<Bdg text="BEI BEDARF" color="#95a5a6"/>}
+              {s.alle2tage&&<Bdg text="ALLE 2 TAGE" color="#e91e63"/>}
+              {s.samstag&&<Bdg text="NUR SA" color="#f39c12"/>}
+              {warn&&<Bdg text="Achtung" color="#e67e22"/>}
+            </div>
+            <div style={{fontSize:11,color:"#bbb",marginTop:1}}>Tippen für Hinweis</div>
+          </div>
+          <div style={{textAlign:"right",flexShrink:0}}>
+            {s.time&&<div style={{fontWeight:700,fontSize:13,color:done?"#aaa":past&&!done&&!s.bedarf?"#e74c3c":s.color}}>{s.time}</div>}
+            {isNx&&!done&&<Bdg text="JETZT" color={s.color}/>}
+            {past&&!done&&!s.bedarf&&<div style={{fontSize:10,color:"#e74c3c"}}>überfällig</div>}
+          </div>
+        </div>
+        {exp&&<div style={{marginTop:10,padding:"8px 10px",background:warn?"#fff8f0":"#f8f8f8",borderRadius:8,fontSize:12,color:"#444",lineHeight:1.5,borderLeft:`3px solid ${warn?"#e67e22":s.color}`}}>{s.note}</div>}
+      </div>
+    );
+  };
+
+  return(
+    <div style={{fontFamily:"'Segoe UI',sans-serif",background:"#f5f5f7",minHeight:"100vh",maxWidth:480,margin:"0 auto",paddingBottom:30}}>
+      {/* HEADER */}
+      <div style={{background:"#1a1a2e",color:"#fff",padding:"14px 14px 10px",position:"sticky",top:0,zIndex:10}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:10,color:"#aaa",letterSpacing:1,textTransform:"uppercase"}}>Mein Tag</div>
+            <div style={{fontSize:22,fontWeight:800}}>{now} Uhr</div>
+          </div>
+          <div style={{display:"flex",gap:10,textAlign:"center"}}>
+            <div><div style={{fontSize:10,color:"#aaa"}}>Suppl.</div><div style={{fontSize:16,fontWeight:700,color:sDone===actSupps.length?"#27ae60":"#f39c12"}}>{sDone}/{actSupps.length}</div></div>
+            <div><div style={{fontSize:10,color:"#aaa"}}>Mahlz.</div><div style={{fontSize:16,fontWeight:700,color:mDone===MEALS.length?"#27ae60":"#3498db"}}>{mDone}/{MEALS.length}</div></div>
+            <div><div style={{fontSize:10,color:"#aaa"}}>Schritte</div><div style={{fontSize:16,fontWeight:700,color:steps>=9000?"#27ae60":"#f39c12"}}>{steps>=1000?Math.round(steps/100)/10+"k":steps}</div></div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:5,marginTop:8}}>
+          {Object.entries(DAY_TYPES).map(([k,v])=>(
+            <button key={k} onClick={()=>chDT(k)} style={{flex:1,padding:"4px 0",border:"none",borderRadius:7,cursor:"pointer",fontSize:10,fontWeight:700,background:dayType===k?"#fff":"rgba(255,255,255,0.1)",color:dayType===k?"#1a1a2e":"#aaa"}}>{v.label}</button>
+          ))}
+        </div>
+        {nxtMeal&&(
+          <div style={{marginTop:8,background:"rgba(255,255,255,0.08)",borderRadius:8,padding:"8px 10px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontSize:10,color:"#aaa"}}>Nächste Mahlzeit</div>
+                <div style={{fontSize:13,fontWeight:700,color:"#fff"}}>{nxtMeal.icon} {nxtMeal.label} · {mealTimes[nxtMeal.id]||nxtMeal.time}</div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:10,color:"#aaa"}}>in</div>
+                <div style={{fontSize:18,fontWeight:800,color:"#3498db"}}>{fmtCD(nxtMealSec||0)}</div>
+              </div>
+            </div>
+            {lstDrinkSec!==null&&lstDrinkSec>0&&<div style={{marginTop:5,fontSize:11,color:"#f39c12"}}>💧 Letztes Trinken in: <strong>{fmtCD(lstDrinkSec)}</strong></div>}
+            {lstDrinkSec===0&&<div style={{marginTop:5,fontSize:11,color:"#e74c3c",fontWeight:700}}>🚫 Keine Flüssigkeit mehr – Mahlzeit gleich!</div>}
+          </div>
+        )}
+        <div style={{display:"flex",gap:6,marginTop:6}}>
+          <div style={{flex:1,background:b12.color+"22",border:`1px solid ${b12.color}44`,borderRadius:7,padding:"4px 8px",display:"flex",justifyContent:"space-between"}}>
+            <span style={{fontSize:10,color:"#bbb"}}>💉 B12</span>
+            <span style={{fontSize:11,fontWeight:700,color:b12.color}}>{b12.label}</span>
+          </div>
+          <div style={{flex:1,background:"#e91e6322",border:"1px solid #e91e6344",borderRadius:7,padding:"4px 8px",display:"flex",justifyContent:"space-between"}}>
+            <span style={{fontSize:10,color:"#bbb"}}>🌸 Oestro</span>
+            <span style={{fontSize:11,fontWeight:700,color:"#e91e63"}}>{isOestro?"Heute ✓":"Kein Tag"}</span>
+          </div>
+        </div>
+        {drinkT!==null&&<div style={{marginTop:6,background:"#3498db22",border:"1px solid #3498db44",borderRadius:7,padding:"6px 10px",display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:11,color:"#aaa"}}>{drinkL}</span><span style={{fontSize:16,fontWeight:800,color:"#3498db"}}>{fmtCD(drinkT)}</span></div>}
+      </div>
+
+      {/* TABS */}
+      <div style={{display:"flex",background:"#f0f0f2",margin:"10px 12px 0",borderRadius:10,padding:3,gap:2}}>
+        {[["supplements","💊 Suppl."],["meals","🍽️ Mahlz."],["nutrition","📊 Ernähr."],["sport","🏋️ Sport"],["koerper","💪 Körper"]].map(([k,l])=>(
+          <button key={k} style={tbtn(tab===k)} onClick={()=>setTab(k)}>{l}</button>
+        ))}
+      </div>
+
+      <div style={{padding:"10px 12px 0"}}>
+
+        {tab==="supplements"&&<>
+          <div style={{...card,background:"#1a1a2e11",border:"1px solid #1a1a2e22"}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,color:"#555"}}>Heute erledigt</span><span style={{fontSize:12,fontWeight:700}}>{sDone}/{actSupps.length}</span></div>
+            <PBar value={sDone} max={actSupps.length} color="#1a1a2e"/>
+            <div style={{marginTop:10,display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:12,color:"#555"}}>🌸 Oestro heute?</span>
+              <button onClick={()=>setOestroDay(isOestro?"":todayStr)} style={{fontSize:11,padding:"3px 12px",borderRadius:20,border:"none",background:isOestro?"#e91e63":"#ddd",color:isOestro?"#fff":"#666",cursor:"pointer",fontWeight:700}}>{isOestro?"Ja ✓":"Nein"}</button>
+            </div>
+          </div>
+          {TIME_BLOCKS.map(bl=>{
+            const bs=SUPPS.filter(s=>bl.ids.includes(s.id));
+            if(!bs.length)return null;
+            return<div key={bl.label}><div style={{fontSize:10,fontWeight:700,color:"#aaa",textTransform:"uppercase",letterSpacing:0.8,margin:"12px 0 5px 2px"}}>{bl.label}</div>{bs.map(s=><SC key={s.id} s={s}/>)}</div>;
+          })}
+        </>}
+
+        {tab==="meals"&&<>
+          {nxtMeal&&<div style={{...card,background:"#3498db0a",border:"2px solid #3498db33"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div><div style={{fontSize:11,color:"#888"}}>Nächste Mahlzeit</div><div style={{fontSize:16,fontWeight:800}}>{nxtMeal.icon} {nxtMeal.label}</div><div style={{fontSize:12,color:"#888"}}>um {mealTimes[nxtMeal.id]||nxtMeal.time} Uhr</div></div>
+              <div style={{textAlign:"center"}}><div style={{fontSize:28,fontWeight:900,color:"#3498db"}}>{fmtCD(nxtMealSec||0)}</div><div style={{fontSize:10,color:"#aaa"}}>verbleibend</div></div>
+            </div>
+            {lstDrinkSec!==null&&<div style={{marginTop:10,padding:"6px 10px",background:lstDrinkSec===0?"#fee":"#fff8f0",borderRadius:8,fontSize:12,fontWeight:600,color:lstDrinkSec===0?"#e74c3c":"#e67e22"}}>{lstDrinkSec===0?"🚫 Keine Flüssigkeit mehr bis nach dem Essen!":`💧 Letztes Trinken in ${fmtCD(lstDrinkSec)} · Danach 30 Min Pause`}</div>}
+            <div style={{display:"flex",gap:8,marginTop:10}}>
+              <button onClick={()=>startDrink("before")} style={{flex:1,background:"#e67e22",color:"#fff",border:"none",borderRadius:8,padding:"7px",fontSize:11,cursor:"pointer",fontWeight:700}}>▶ 30 Min vor Essen</button>
+              <button onClick={()=>startDrink("after")} style={{flex:1,background:"#27ae60",color:"#fff",border:"none",borderRadius:8,padding:"7px",fontSize:11,cursor:"pointer",fontWeight:700}}>▶ 30 Min nach Essen</button>
+            </div>
+          </div>}
+          <div style={{...card,border:`1px solid ${gapOk?"#27ae6033":"#e74c3c33"}`,background:gapOk?"#27ae6011":"#e74c3c11"}}>
+            <div style={{fontWeight:600,fontSize:13,color:gapOk?"#27ae60":"#e74c3c"}}>{gapOk?"✓ Mindest-Abstände ok (3h)":"⚠️ Mind. 3h Pause zwischen Mahlzeiten"}</div>
+          </div>
+          <div style={{...card,background:"#27ae6011",border:"1px solid #27ae6033"}}>
+            <div style={{fontWeight:600,fontSize:12,color:"#27ae60",marginBottom:4}}>🥕 Snacks nach Bypass</div>
+            <div style={{fontSize:11,color:"#555",lineHeight:1.8}}><strong>Erlaubt (Notfall):</strong> Karotte, Apfel, Kohlrabi, Gurke<br/><strong>Gilt als Mahlzeit!</strong> → 3h Abstand danach<br/><strong>Banane:</strong> zur Hauptmahlzeit – nicht als Snack<br/><strong>Zitrusfrüchte:</strong> ⚠️ nur als Kompott</div>
+          </div>
+          <div style={{...card,background:"#8e44ad11",border:"1px solid #8e44ad33"}}>
+            <div style={{fontWeight:600,fontSize:12,color:"#8e44ad",marginBottom:4}}>🍽️ Portionsgröße</div>
+            <div style={{fontSize:11,color:"#555",lineHeight:1.7}}><strong>Eiweiß zuerst:</strong> 60–70 g · <strong>Gemüse/KH:</strong> 60–80 g<br/><strong>Max.:</strong> 150 g / 200 ml · Eiweiß → Gemüse → KH</div>
+          </div>
+          {MEALS.map((m,i)=>{
+            const done=!!mealDone[m.id],t=mealTimes[m.id]||m.time,isNx=nxtMeal?.id===m.id,past=timeToMin(t)<nowMin;
+            const pnS=MEALS.slice(0,i).filter(x=>!x.snack).pop();
+            const gOk=!pnS||m.snack||timeToMin(t)-timeToMin(mealTimes[pnS.id]||pnS.time)>=180;
+            return(
+              <div key={m.id} style={{...card,border:isNx?"2px solid #3498db":m.snack?"1px dashed #aaa":!gOk?"2px solid #e74c3c":"2px solid transparent",background:m.snack?"#f9f9f9":"#fff",opacity:done?0.6:1}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                  <div onClick={()=>{setMealDone(p=>({...p,[m.id]:!p[m.id]}));if(!done)startDrink("after");}} style={{width:28,height:28,borderRadius:"50%",border:`2px solid ${done?"#27ae60":m.snack?"#aaa":"#3498db"}`,background:done?"#27ae60":"#fff",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#fff",fontWeight:700,fontSize:12}}>{done?"✓":""}</div>
+                  <span style={{fontSize:13,fontWeight:600,flex:1,color:done?"#aaa":"#1a1a2e"}}>{m.icon} {m.label}</span>
+                  {isNx&&<Bdg text="JETZT" color="#3498db"/>}
+                  {m.snack&&<Bdg text="NUR BEI HUNGER" color="#95a5a6"/>}
+                  {!gOk&&<Bdg text="ZU FRÜH" color="#e74c3c"/>}
+                  {past&&!done&&!m.snack&&<Bdg text="überfällig" color="#e74c3c"/>}
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:12,color:"#888"}}>Uhrzeit:</span>
+                  <input type="time" value={t} onChange={e=>setMealTimes(p=>({...p,[m.id]:e.target.value}))} style={{border:"1px solid #e0e0e0",borderRadius:6,padding:"3px 8px",fontSize:13,fontFamily:"inherit"}}/>
+                  {pnS&&!m.snack&&(()=>{const df=timeToMin(t)-timeToMin(mealTimes[pnS.id]||pnS.time);return<span style={{fontSize:11,color:gOk?"#27ae60":"#e74c3c",marginLeft:"auto"}}>{Math.floor(df/60)}h {df%60>0?df%60+"Min":""}</span>;})()}
+                </div>
+              </div>
+            );
+          })}
+        </>}
+
+        {tab==="nutrition"&&<>
+          <div style={card}>
+            <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>📊 Tagesziele (Ziel: 64 kg)</div>
+            {[["kcal","Kalorien","kcal","#e74c3c",1750],["protein","Eiweiß","g","#3498db",85],["carbs","Kohlenhydrate","g","#f39c12",140],["fat","Fett","g","#8e44ad",48]].map(([k,l,u,c,g])=>(
+              <div key={k} style={{marginBottom:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}><span style={{color:"#555"}}>{l}</span><span style={{fontWeight:600,color:c}}>{nutrition[k]} / {g} {u}</span></div>
+                <PBar value={nutrition[k]} max={g} color={c}/>
+              </div>
+            ))}
+          </div>
+          <div style={card}>
+            <div style={{fontWeight:700,fontSize:14,marginBottom:10}}>➕ Mahlzeit eintragen</div>
+            <div style={{fontSize:11,color:"#888",marginBottom:10}}>Wert eingeben → auf + tippen → wird addiert</div>
+            {[["kcal","Kalorien","kcal","#e74c3c"],["protein","Eiweiß","g","#3498db"],["carbs","KH","g","#f39c12"],["fat","Fett","g","#8e44ad"]].map(([k,l,u,c])=>(
+              <div key={k} style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                <span style={{fontSize:12,color:"#555",width:65}}>{l}</span>
+                <input
+                  type="number" min="0" placeholder="0"
+                  value={nutInput[k]||""}
+                  onChange={e=>setNutInput(p=>({...p,[k]:e.target.value}))}
+                  style={{flex:1,border:`1px solid ${c}66`,borderRadius:6,padding:"6px 8px",fontSize:14,fontFamily:"inherit"}}
+                />
+                <span style={{fontSize:12,color:"#888",width:28}}>{u}</span>
+                <button onClick={()=>{
+                  const v=parseFloat(nutInput[k]||"0");
+                  if(!v)return;
+                  setNutrition(p=>({...p,[k]:Math.round((p[k]+v)*10)/10}));
+                  setNutInput(p=>({...p,[k]:""}));
+                }} style={{background:c,color:"#fff",border:"none",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontWeight:800,fontSize:16}}>+</button>
+              </div>
+            ))}
+          </div>
+          <div style={{...card,background:"#fff8f0",border:"1px solid #e67e2233"}}>
+            <div style={{fontWeight:600,fontSize:12,color:"#e67e22",marginBottom:6}}>⚠️ Bypass-Regeln</div>
+            <div style={{fontSize:11,color:"#555",lineHeight:1.8}}>✓ Eiweiß zuerst · ✓ Max. 150 g/200 ml · ✓ 30 Min Trinkpause<br/>✓ Keine Kohlensäure · ✓ Mind. 1,5 L/Tag · ✓ Protein max. 1,2 g/kg</div>
+          </div>
+          <div style={card}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><span style={{fontWeight:700,fontSize:14}}>🚶 Schritte heute</span><span style={{fontWeight:700,color:steps>=9000?"#27ae60":"#f39c12"}}>{steps.toLocaleString()} / 12.000</span></div>
+            <PBar value={steps} max={12000} color={steps>=9000?"#27ae60":"#f39c12"}/>
+            <div style={{display:"flex",gap:6,marginTop:10}}>
+              {[1000,2000,5000].map(n=><button key={n} onClick={()=>setSteps(p=>p+n)} style={{flex:1,background:"#f0f0f2",border:"none",borderRadius:8,padding:"6px",fontSize:12,cursor:"pointer",fontWeight:600}}>+{n/1000}k</button>)}
+              <button onClick={()=>setSteps(0)} style={{background:"#fee",border:"none",borderRadius:8,padding:"6px 10px",fontSize:12,cursor:"pointer",color:"#e74c3c",fontWeight:600}}>↺</button>
+            </div>
+          </div>
+          <div style={{...card,background:"#f0fff4",border:"1px solid #27ae6033"}}>
+            <div style={{fontWeight:600,fontSize:12,color:"#27ae60",marginBottom:6}}>📋 Laborwerte</div>
+            <div style={{fontSize:11,color:"#555",lineHeight:1.7}}>Ferritin · Eisen · B12 · Folat · Vit D · Calcium · PTH · Zink · Selen · Magnesium · Albumin · TSH · fT3 · fT4</div>
+            <div style={{fontSize:11,color:"#e67e22",marginTop:6}}>⚠️ Biotin 48–72h vor Blutabnahme pausieren!</div>
+          </div>
+          <button onClick={()=>setNutrition({kcal:0,protein:0,fat:0,carbs:0})} style={{width:"100%",background:"none",border:"1px solid #ddd",borderRadius:10,padding:10,color:"#888",fontSize:13,cursor:"pointer",marginTop:4}}>Tageswerte zurücksetzen</button>
+        </>}
+
+        {tab==="sport"&&<>
+          <div style={{...card,border:`2px solid ${tc[todayW.type]}`,background:tc[todayW.type]+"0a"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div><div style={{fontSize:10,color:"#aaa",textTransform:"uppercase"}}>Heute – {todayW.day}</div><div style={{fontSize:18,fontWeight:800,marginTop:2}}>{todayW.icon} {todayW.title}</div><div style={{fontSize:12,color:"#888"}}>{todayW.duration}</div></div>
+              <button onClick={()=>setWorkDone(p=>({...p,[todayW.day]:!p[todayW.day]}))} style={{width:44,height:44,borderRadius:"50%",border:"none",background:workDone[todayW.day]?"#27ae60":"#f0f0f0",color:workDone[todayW.day]?"#fff":"#aaa",fontSize:20,cursor:"pointer",fontWeight:700}}>{workDone[todayW.day]?"✓":"○"}</button>
+            </div>
+            <div style={{marginTop:12}}>
+              {todayW.exercises.map((ex,i)=>(
+                <div key={i} style={{display:"flex",gap:10,marginBottom:8,padding:"6px 8px",background:"rgba(255,255,255,0.7)",borderRadius:8}}>
+                  <span style={{fontSize:12,fontWeight:700,color:tc[todayW.type],minWidth:14}}>{i+1}.</span>
+                  <div><div style={{fontSize:13,fontWeight:600}}>{ex.name} <span style={{color:tc[todayW.type]}}>{ex.sets}</span></div><div style={{fontSize:11,color:"#888"}}>{ex.note}</div></div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{fontSize:10,fontWeight:700,color:"#aaa",textTransform:"uppercase",letterSpacing:0.8,margin:"14px 0 6px 2px"}}>📅 Wochenplan</div>
+          {WORKOUT_WEEK.map(w=>{
+            const isTd=w.day===todayW.day,done=workDone[w.day],exp=xWork===w.day;
+            return(
+              <div key={w.day} style={{...card,border:isTd?`2px solid ${tc[w.type]}`:"2px solid transparent",opacity:done?0.7:1}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}} onClick={()=>setXWork(exp?null:w.day)}>
+                  <div style={{width:36,height:36,borderRadius:"50%",background:tc[w.type]+"18",border:`2px solid ${tc[w.type]}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>{w.icon}</div>
+                  <div style={{flex:1}}>
+                    <div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{fontWeight:700,fontSize:13}}>{w.day}</span>{isTd&&<Bdg text="HEUTE" color={tc[w.type]}/>}{done&&<Bdg text="✓ Erledigt" color="#27ae60"/>}</div>
+                    <div style={{fontSize:12,color:"#888"}}>{w.title} · {w.duration}</div>
+                  </div>
+                  <span style={{color:"#ccc"}}>{exp?"▲":"▼"}</span>
+                </div>
+                {exp&&<div style={{marginTop:10}}>
+                  {w.exercises.map((ex,j)=>(
+                    <div key={j} style={{display:"flex",gap:8,marginBottom:6,padding:"5px 8px",background:"#f8f8f8",borderRadius:7}}>
+                      <span style={{fontSize:11,fontWeight:700,color:tc[w.type],minWidth:12}}>{j+1}.</span>
+                      <div><div style={{fontSize:12,fontWeight:600}}>{ex.name} <span style={{color:tc[w.type]}}>{ex.sets}</span></div><div style={{fontSize:11,color:"#999"}}>{ex.note}</div></div>
+                    </div>
+                  ))}
+                  <button onClick={()=>setWorkDone(p=>({...p,[w.day]:!p[w.day]}))} style={{width:"100%",marginTop:6,background:done?"#eee":"#27ae60",color:done?"#888":"#fff",border:"none",borderRadius:8,padding:"8px",fontSize:12,cursor:"pointer",fontWeight:700}}>{done?"Als offen markieren":"✓ Als erledigt markieren"}</button>
+                </div>}
+              </div>
+            );
+          })}
+        </>}
+
+        {tab==="koerper"&&<>
+          {/* Heutige Eingabe */}
+          <div style={card}>
+            <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>📥 Heutige Werte eintragen</div>
+            <div style={{fontSize:11,color:"#888",marginBottom:10}}>Aus Renpho, Samsung Health – einmal täglich</div>
+            {[
+              ["gewicht","⚖️ Gewicht (Renpho)","kg","#e74c3c"],
+              ["koerperfett","🔥 Körperfett (Renpho)","%","#e67e22"],
+              ["bmi","📐 BMI (Renpho)","","#f39c12"],
+              ["schritte_sh","🚶 Schritte (Samsung Health)","","#3498db"],
+              ["kcal_bewegung","🏃 Kalorienverbrauch Bewegung","kcal","#27ae60"],
+            ].map(([k,l,u,c])=>(
+              <div key={k} style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                <span style={{fontSize:12,color:"#555",flex:1}}>{l}</span>
+                <input
+                  type="number" step="0.1" min="0"
+                  value={bodyInput[k]}
+                  onChange={e=>setBodyInput(p=>({...p,[k]:e.target.value}))}
+                  placeholder={bodyToday[k]||"–"}
+                  style={{width:80,border:`1px solid ${c}44`,borderRadius:6,padding:"5px 8px",fontSize:13,fontFamily:"inherit",textAlign:"right"}}
+                />
+                {u&&<span style={{fontSize:12,color:"#888",width:30}}>{u}</span>}
+              </div>
+            ))}
+            <button onClick={()=>{
+              const vals={};
+              ["gewicht","koerperfett","bmi","schritte_sh","kcal_bewegung"].forEach(k=>{if(bodyInput[k])vals[k]=bodyInput[k];});
+              const updated={...bodyToday,...vals};
+              setBodyToday(updated);
+              const entry={datum:new Date().toLocaleDateString("de-DE"),...updated};
+              setBodyHistory(h=>{const filtered=h.filter(e=>e.datum!==entry.datum);return[entry,...filtered].slice(0,30);});
+              setBodyInput({gewicht:"",koerperfett:"",bmi:"",schritte_sh:"",kcal_bewegung:""});
+            }} style={{width:"100%",background:"#1a1a2e",color:"#fff",border:"none",borderRadius:10,padding:"10px",fontSize:13,cursor:"pointer",fontWeight:700,marginTop:4}}>✓ Werte speichern</button>
+          </div>
+
+          {/* Heutige Übersicht */}
+          <div style={card}>
+            <div style={{fontWeight:700,fontSize:14,marginBottom:10}}>📊 Heute – {new Date().toLocaleDateString("de-DE")}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {[
+                ["⚖️","Gewicht",bodyToday.gewicht,"kg","#e74c3c",64,"Ziel: 64 kg"],
+                ["🔥","Körperfett",bodyToday.koerperfett,"%","#e67e22",22,"Ziel: <22%"],
+                ["📐","BMI",bodyToday.bmi,"","#f39c12",22,"Ziel: ~22"],
+                ["🚶","Schritte",bodyToday.schritte_sh,"","#3498db",12000,"Ziel: 12.000"],
+                ["🏃","Kal. Bewegung",bodyToday.kcal_bewegung,"kcal","#27ae60",400,"Ziel: 400+"],
+              ].map(([icon,label,val,unit,color,target,hint])=>(
+                <div key={label} style={{background:color+"0d",border:`1px solid ${color}33`,borderRadius:10,padding:"10px 12px"}}>
+                  <div style={{fontSize:11,color:"#888"}}>{icon} {label}</div>
+                  <div style={{fontSize:20,fontWeight:800,color:val?color:"#ccc",marginTop:2}}>{val||"–"}<span style={{fontSize:12,fontWeight:400,color:"#aaa"}}>{val?" "+unit:""}</span></div>
+                  <div style={{fontSize:10,color:"#aaa",marginTop:2}}>{hint}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Verlauf */}
+          {bodyHistory.length>0&&<div style={card}>
+            <div style={{fontWeight:700,fontSize:14,marginBottom:10}}>📅 Verlauf (letzte 30 Tage)</div>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                <thead>
+                  <tr style={{borderBottom:"2px solid #f0f0f0"}}>
+                    {["Datum","Gew.","KF%","BMI","Schr.","Kal."].map(h=>(
+                      <th key={h} style={{padding:"4px 6px",color:"#888",fontWeight:600,textAlign:"right"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {bodyHistory.map((e,i)=>(
+                    <tr key={i} style={{borderBottom:"1px solid #f5f5f5"}}>
+                      <td style={{padding:"5px 6px",color:"#555",whiteSpace:"nowrap"}}>{e.datum}</td>
+                      <td style={{padding:"5px 6px",textAlign:"right",fontWeight:600,color:"#e74c3c"}}>{e.gewicht||"–"}</td>
+                      <td style={{padding:"5px 6px",textAlign:"right",color:"#e67e22"}}>{e.koerperfett||"–"}</td>
+                      <td style={{padding:"5px 6px",textAlign:"right",color:"#f39c12"}}>{e.bmi||"–"}</td>
+                      <td style={{padding:"5px 6px",textAlign:"right",color:"#3498db"}}>{e.schritte_sh||"–"}</td>
+                      <td style={{padding:"5px 6px",textAlign:"right",color:"#27ae60"}}>{e.kcal_bewegung||"–"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>}
+
+          {/* Ziele */}
+          <div style={{...card,background:"#f0fff4",border:"1px solid #27ae6033"}}>
+            <div style={{fontWeight:600,fontSize:12,color:"#27ae60",marginBottom:6}}>🎯 Deine Ziele</div>
+            <div style={{fontSize:11,color:"#555",lineHeight:1.9}}>
+              ⚖️ Zielgewicht: <strong>64 kg</strong><br/>
+              🔥 Körperfett: <strong>unter 22 %</strong><br/>
+              🚶 Schritte/Tag: <strong>12.000</strong><br/>
+              🏃 Bewegungskaltorien: <strong>400+ kcal</strong>
+            </div>
+          </div>
+          <button onClick={()=>{if(window.confirm("Heutigen Körpereintrag löschen?")){setBodyToday({gewicht:"",koerperfett:"",bmi:"",schritte_sh:"",kcal_bewegung:""});}}} style={{width:"100%",background:"none",border:"1px solid #ddd",borderRadius:10,padding:10,color:"#888",fontSize:13,cursor:"pointer",marginTop:4}}>Heutige Werte zurücksetzen</button>
+        </>}
+
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
